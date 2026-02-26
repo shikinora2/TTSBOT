@@ -50,6 +50,17 @@ APP_ID = int(args.app_id or os.getenv("DISCORD_APP_ID", "0"))
 # TTS Backend URL
 TTS_BACKEND_URL = os.getenv("TTS_BACKEND_URL", "http://127.0.0.1:5050")
 
+# Default speaker and mapping
+DEFAULT_SPEAKER = "NF"
+SPEAKER_NAMES = {
+    "NF": "👩 Thu Hà (Soft female voice)",
+    "NM1": "👨 Minh Đức (Deep male voice)",
+    "SF": "👧 Thanh Tâm (Young female voice)",
+    "SM": "👦 Quang Huy (Young male voice)",
+    "NM2": "🧑 Hoàng Nam (Strong male voice)",
+    "NF2": "👩‍💼 Ngọc Ánh (Professional female)"  # Bản đồ trỏ về NF nếu cần
+}
+
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents, application_id=APP_ID)
@@ -64,6 +75,7 @@ class GuildState:
         self.setup_channel_id = None
         self.queue = asyncio.Queue()
         self.play_task = None
+        self.speaker = DEFAULT_SPEAKER
 
 guild_states = {}
 
@@ -145,14 +157,14 @@ def clean_text(text):
     text = re.sub(r'<:\w+:\d+>', '', text)  # Xóa custom emoji
     return text.strip()
 
-async def generate_audio(text, filepath):
+async def generate_audio(text, speaker, filepath):
     """Gọi TTS Backend API để tổng hợp giọng nói."""
     global http_session
     if http_session is None or http_session.closed:
         http_session = aiohttp.ClientSession()
 
     url = f"{TTS_BACKEND_URL}/synthesize"
-    payload = {"text": text, "speaker": SPEAKER}
+    payload = {"text": text, "speaker": speaker}
 
     try:
         async with http_session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
@@ -181,7 +193,7 @@ async def tts_worker(voice_client, state):
             filepath = os.path.join(BASE_DIR, f"temp_audio_{os.getpid()}_{id(state)}.wav")
 
             # Gọi Backend API để sinh audio
-            success = await generate_audio(text, filepath)
+            success = await generate_audio(text, state.speaker, filepath)
 
             if not success:
                 log.warning(f"[TTS] Không sinh được audio cho: '{text[:50]}...'")
@@ -273,6 +285,22 @@ async def slash_setup(interaction: discord.Interaction, channel: discord.TextCha
     state.setup_channel_id = channel.id
     await interaction.response.send_message(f"✅ Đã thiết lập kênh lắng nghe TTS tại: {channel.mention}")
 
+@tree.command(name="voice", description="Chọn giọng đọc TTS cho server")
+@app_commands.describe(speaker="Chọn một giọng đọc từ danh sách")
+@app_commands.choices(speaker=[
+    app_commands.Choice(name="👩 Thu Hà (Soft female voice)", value="NF"),
+    app_commands.Choice(name="👨 Minh Đức (Deep male voice)", value="NM1"),
+    app_commands.Choice(name="👧 Thanh Tâm (Young female voice)", value="SF"),
+    app_commands.Choice(name="👦 Quang Huy (Young male voice)", value="SM"),
+    app_commands.Choice(name="🧑 Hoàng Nam (Strong male voice)", value="NM2"),
+    app_commands.Choice(name="👩‍💼 Ngọc Ánh (Professional female)", value="NF"),  # Dùng chung NF
+])
+async def slash_voice(interaction: discord.Interaction, speaker: app_commands.Choice[str]):
+    """[/voice] Đổi giọng đọc TTS"""
+    state = get_state(interaction.guild.id)
+    state.speaker = speaker.value
+    await interaction.response.send_message(f"✅ Đã đổi giọng đọc thành: **{speaker.name}**")
+
 @tree.command(name="join", description="Gọi bot vào kênh thoại bạn đang đứng")
 async def slash_join(interaction: discord.Interaction):
     state = get_state(interaction.guild.id)
@@ -358,9 +386,8 @@ async def slash_status(interaction: discord.Interaction):
     embed = discord.Embed(title="📊 Trạng thái Bot TTS", color=0x5865F2)
     embed.add_field(name="🤖 Instance", value=clone_label, inline=True)
     embed.add_field(name="📝 Kênh lắng nghe", value=ch_str, inline=True)
-    embed.add_field(name="🔊 Kênh thoại", value=vc_str, inline=True)
-    embed.add_field(name="🎙️ Giọng đọc", value="👩‍🦰 NF — Nữ miền Bắc", inline=True)
-    embed.add_field(name="📋 Hàng đợi", value=f"`{queue_size}` câu", inline=True)
+    embed.add_field(name="� Hàng đợi", value=f"`{queue_size}` câu", inline=True)
+    embed.add_field(name="🎙️ Giọng đọc", value=SPEAKER_NAMES.get(state.speaker, state.speaker), inline=True)
     embed.add_field(name="🖥️ TTS Backend", value=backend_status, inline=True)
     await interaction.response.send_message(embed=embed)
 
@@ -368,7 +395,7 @@ async def slash_status(interaction: discord.Interaction):
 async def slash_help(interaction: discord.Interaction):
     embed = discord.Embed(
         title="📖 Danh sách lệnh Bot TTS",
-        description="Giọng đọc cố định: 👩‍🦰 **NF — Nữ miền Bắc**",
+        description="Bot đọc văn bản thành giọng nói Tiếng Việt.\nDùng lệnh `/voice` để đổi giọng đọc.",
         color=0x57F287
     )
     embed.add_field(
@@ -387,7 +414,8 @@ async def slash_help(interaction: discord.Interaction):
         value=(
             "`/join` — Bot vào kênh thoại bạn đang đứng\n"
             "`/leave` — Bot rời kênh thoại, xóa hàng đợi\n"
-            "`/skip` — Bỏ qua câu đang đọc"
+            "`/skip` — Bỏ qua câu đang đọc\n"
+            "`/voice` — Đổi giọng đọc cho server"
         ),
         inline=False
     )
