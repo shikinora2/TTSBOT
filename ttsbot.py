@@ -235,8 +235,20 @@ async def on_ready():
         log.warning("   Hãy chạy: python tts_server.py")
 
     try:
-        synced = await bot.tree.sync()
-        log.info(f"Đã đồng bộ {len(synced)} slash command(s).")
+        # Đồng bộ lệnh cho từng server bot đang tham gia (để cập nhật ngay lập tức)
+        synced_count = 0
+        for guild in bot.guilds:
+            try:
+                bot.tree.copy_global_to(guild=guild)
+                await bot.tree.sync(guild=guild)
+                synced_count += 1
+            except Exception as e:
+                log.warning(f"Không thể sync lệnh ở server {guild.name} ({guild.id}): {e}")
+                
+        # Đồng thời sync global cho các server mới vào
+        await bot.tree.sync()
+        
+        log.info(f"Đã đồng bộ slash command ngay lập tức cho {synced_count} server.")
     except Exception as e:
         log.error(f"[sync slash commands] {e}")
 
