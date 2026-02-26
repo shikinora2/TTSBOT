@@ -19,6 +19,13 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Build cache trong valtec-tts-src
+valtec-tts-src/deployments/android/.gradle/
+valtec-tts-src/deployments/android/build/
+valtec-tts-src/deployments/android/app/build/
+valtec-tts-src/deployments/android/local.properties
+valtec-tts-src/*.egg-info/
+
 # OS
 .DS_Store
 Thumbs.db
