@@ -429,11 +429,17 @@ async def slash_clone(interaction: discord.Interaction, token: str, app_id: str)
 
     try:
         proc = start_clone_process(clone_info)
+        
+        # Tạo link mời bot với các quyền cần thiết (Text + Voice)
+        # Permissions = 36767808 (Send Messages, Read Message History, Add Reactions, Connect, Speak, Use Voice Activity)
+        invite_url = f"https://discord.com/api/oauth2/authorize?client_id={app_id}&permissions=36767808&scope=bot%20applications.commands"
+        
         await interaction.followup.send(
-            f"✅ Đã tạo và khởi chạy **{clone_id}**!\n"
+            f"✅ Đã tạo và khởi động **{clone_id}**!\n"
             f"• PID: `{proc.pid}`\n"
             f"• App ID: `{app_id}`\n\n"
-            f"Bot clone sẽ online trong vài giây. Dùng `/clones` để xem danh sách.",
+            f"🔗 **[BẤM VÀO ĐÂY ĐỂ MỜI CLONE NÀY VÀO SERVER]({invite_url})**\n\n"
+            f"_Lưu ý: Bạn phải mời nó vào server thì nó mới xuất hiện và hoạt động. Dùng lệnh `/clones` để xem danh sách._",
             ephemeral=True
         )
     except Exception as e:
