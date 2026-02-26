@@ -51,14 +51,22 @@ APP_ID = int(args.app_id or os.getenv("DISCORD_APP_ID", "0"))
 TTS_BACKEND_URL = os.getenv("TTS_BACKEND_URL", "http://127.0.0.1:5050")
 
 # Default speaker and mapping
-DEFAULT_SPEAKER = "NF"
+DEFAULT_SPEAKER = "THUHA"
 SPEAKER_NAMES = {
-    "NF": "👩 Thu Hà (Soft female voice)",
-    "NM1": "👨 Minh Đức (Deep male voice)",
-    "SF": "👧 Thanh Tâm (Young female voice)",
-    "SM": "👦 Quang Huy (Young male voice)",
-    "NM2": "🧑 Hoàng Nam (Strong male voice)",
-    "NF2": "👩‍💼 Ngọc Ánh (Professional female)"  # Bản đồ trỏ về NF nếu cần
+    "THUHA": "👩 Thu Hà (Soft female voice)",
+    "MINHDUC": "👨 Minh Đức (Deep male voice)",
+    "THANHTAM": "👧 Thanh Tâm (Young female voice)",
+    "QUANGHUY": "👦 Quang Huy (Young male voice)",
+    "HOANGNAM": "🧑 Hoàng Nam (Strong male voice)"
+}
+
+# Ánh xạ từ ID của bot sang ID của model Valtec-TTS
+SPEAKER_MAPPING = {
+    "THUHA": "NF",
+    "MINHDUC": "NM1",
+    "THANHTAM": "SF",
+    "QUANGHUY": "SM",
+    "HOANGNAM": "NM2"
 }
 
 intents = discord.Intents.default()
@@ -163,8 +171,11 @@ async def generate_audio(text, speaker, filepath):
     if http_session is None or http_session.closed:
         http_session = aiohttp.ClientSession()
 
+    # Chuyển đổi tên thân thiện (THUHA) sang ID của model (NF)
+    actual_speaker = SPEAKER_MAPPING.get(speaker, "NF")
+
     url = f"{TTS_BACKEND_URL}/synthesize"
-    payload = {"text": text, "speaker": speaker}
+    payload = {"text": text, "speaker": actual_speaker}
 
     try:
         async with http_session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
@@ -288,12 +299,11 @@ async def slash_setup(interaction: discord.Interaction, channel: discord.TextCha
 @tree.command(name="voice", description="Chọn giọng đọc TTS cho server")
 @app_commands.describe(speaker="Chọn một giọng đọc từ danh sách")
 @app_commands.choices(speaker=[
-    app_commands.Choice(name="👩 Thu Hà (Soft female voice)", value="NF"),
-    app_commands.Choice(name="👨 Minh Đức (Deep male voice)", value="NM1"),
-    app_commands.Choice(name="👧 Thanh Tâm (Young female voice)", value="SF"),
-    app_commands.Choice(name="👦 Quang Huy (Young male voice)", value="SM"),
-    app_commands.Choice(name="🧑 Hoàng Nam (Strong male voice)", value="NM2"),
-    app_commands.Choice(name="👩‍💼 Ngọc Ánh (Professional female)", value="NF"),  # Dùng chung NF
+    app_commands.Choice(name="👩 Thu Hà (Soft female voice)", value="THUHA"),
+    app_commands.Choice(name="👨 Minh Đức (Deep male voice)", value="MINHDUC"),
+    app_commands.Choice(name="👧 Thanh Tâm (Young female voice)", value="THANHTAM"),
+    app_commands.Choice(name="👦 Quang Huy (Young male voice)", value="QUANGHUY"),
+    app_commands.Choice(name="🧑 Hoàng Nam (Strong male voice)", value="HOANGNAM"),
 ])
 async def slash_voice(interaction: discord.Interaction, speaker: app_commands.Choice[str]):
     """[/voice] Đổi giọng đọc TTS"""
