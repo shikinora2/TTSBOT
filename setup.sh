@@ -110,14 +110,17 @@ if [[ ! -d "$VENV_DIR" ]]; then
     "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
 
+# Xóa cache cũ nếu bị lỗi từ lần trước để giải phóng ổ cứng
+rm -rf ~/.cache/pip
+
 PIP="$VENV_DIR/bin/pip"
-"$PIP" install --upgrade pip setuptools wheel -q
+"$PIP" install --no-cache-dir --upgrade pip setuptools wheel -q
 
 log "Cài PyTorch CPU (có thể mất vài phút)..."
-"$PIP" install torch torchaudio --index-url https://download.pytorch.org/whl/cpu -q
+"$PIP" install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu -q
 
 log "Cài các thư viện phụ thuộc..."
-"$PIP" install -q \
+"$PIP" install --no-cache-dir -q \
     numpy scipy soundfile librosa tqdm \
     Unidecode num2words inflect cn2an jieba pypinyin \
     jamo gruut g2p-en anyascii \
@@ -125,10 +128,10 @@ log "Cài các thư viện phụ thuộc..."
     huggingface_hub eng-to-ipa
 
 log "Cài Discord + HTTP packages..."
-"$PIP" install -q discord.py==2.6.4 PyNaCl python-dotenv aiohttp
+"$PIP" install --no-cache-dir -q discord.py==2.6.4 PyNaCl python-dotenv aiohttp
 
 log "Cài valtec-tts editable..."
-"$PIP" install -q -e "$VALTEC_DIR"
+"$PIP" install --no-cache-dir -q -e "$VALTEC_DIR"
 
 ok "Tất cả packages đã được cài đặt."
 
