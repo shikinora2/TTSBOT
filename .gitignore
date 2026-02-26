@@ -6,12 +6,13 @@
 venv/
 env/
 
-# Model cache (tự download khi chạy)
-valtec-tts-src/
-
 # File audio tạm
+temp_audio/
 temp_audio_*.wav
 output/
+
+# Clone config (chứa token)
+clones.json
 
 # Python cache
 __pycache__/

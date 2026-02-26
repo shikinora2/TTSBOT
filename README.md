@@ -7,20 +7,13 @@ Giọng đọc: 👩‍🦰 **Nữ miền Bắc (NF)** · Model: Valtec-TTS 74.8
 
 ## ⚡ Setup VPS — 1 dòng lệnh
 
-**Bước 1:** Upload code lên VPS
+SSH vào VPS và chạy:
 
 ```bash
-# Từ máy local, chạy:
-scp -r ./TTSBOT root@<IP_VPS>:/root/ttsbot
+git clone https://github.com/shikinora2/TTSBOT.git /root/ttsbot && cd /root/ttsbot && sudo bash setup.sh
 ```
 
-**Bước 2:** SSH vào VPS và chạy:
-
-```bash
-cd /root/ttsbot && sudo bash setup.sh
-```
-
-> ⏱ Mất khoảng **10–20 phút**. Script tự động làm tất cả: swap, Python 3.11, PyTorch, dependencies, systemd services.
+> ⏱ Mất khoảng **10–20 phút**. Script tự động làm tất cả: swap 2GB, Python 3.11, PyTorch, dependencies, systemd services.
 
 ---
 
@@ -177,6 +170,14 @@ journalctl -u ttsbot -f         # Log realtime
 5. Bot clone online trong vài giây, dùng **chung backend TTS**
 
 > ⚠️ Mỗi bot cần **1 token riêng** — Discord giới hạn 1 bot chỉ ở 1 voice channel/server.
+
+---
+
+## 🔄 Cập nhật code
+
+```bash
+cd /root/ttsbot && git pull && systemctl restart tts-server ttsbot
+```
 
 ---
 

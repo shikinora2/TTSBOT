@@ -34,7 +34,7 @@ PYTHON_BIN="python3.11"
 SERVICE_NAME="ttsbot"
 SWAP_SIZE="2G"
 SWAP_FILE="/swapfile"
-# Code được lưu trữ local, không cần remote repo
+BOT_REPO="https://github.com/shikinora2/TTSBOT.git"
 
 # Cho phép ghi đè từ env:
 INSTALL_DIR="${TTSBOT_DIR:-$INSTALL_DIR}"
@@ -81,23 +81,25 @@ else
     ok "$(python3.11 --version) đã có sẵn."
 fi
 
-# ── 4. Kiểm tra repo bot (local) ─────────────────────────────
+# ── 4. Clone repo bot từ GitHub ───────────────────────────────
 echo ""
-echo -e "${BOLD}[4/8] Kiểm tra Bot TTS...${RESET}"
+echo -e "${BOLD}[4/8] Clone Bot TTS từ GitHub...${RESET}"
 if [[ -f "$INSTALL_DIR/ttsbot.py" ]]; then
-    ok "Thư mục $INSTALL_DIR đã có sẵn."
+    ok "Thư mục $INSTALL_DIR đã có sẵn — bỏ qua clone."
 else
-    die "Không tìm thấy $INSTALL_DIR/ttsbot.py — hãy copy code vào $INSTALL_DIR trước."
+    log "Đang clone từ $BOT_REPO..."
+    git clone "$BOT_REPO" "$INSTALL_DIR"
+    ok "Clone thành công!"
 fi
 cd "$INSTALL_DIR"
 
-# ── 5. Kiểm tra Valtec-TTS (local) ───────────────────────────
+# ── 5. Kiểm tra Valtec-TTS ────────────────────────────────────
 echo ""
 echo -e "${BOLD}[5/8] Kiểm tra Valtec-TTS...${RESET}"
 if [[ -d "$VALTEC_DIR" ]]; then
     ok "Valtec-TTS đã có sẵn tại $VALTEC_DIR."
 else
-    die "Không tìm thấy $VALTEC_DIR — hãy copy valtec-tts-src vào $INSTALL_DIR trước."
+    die "Không tìm thấy $VALTEC_DIR — repo bị thiếu thư mục valtec-tts-src."
 fi
 
 # ── 6. Tạo venv + cài packages ────────────────────────────────
