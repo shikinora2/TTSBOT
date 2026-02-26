@@ -1,0 +1,23 @@
+# Biến môi trường
+.env
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Model cache (tự download khi chạy)
+valtec-tts-src/
+
+# File audio tạm
+temp_audio_*.wav
+output/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db
