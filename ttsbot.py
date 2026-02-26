@@ -265,13 +265,17 @@ async def slash_setup(interaction: discord.Interaction, channel: discord.TextCha
 async def slash_join(interaction: discord.Interaction):
     state = get_state(interaction.guild.id)
 
-    if not state.setup_channel_id:
-        await interaction.response.send_message("⚠️ Bạn phải dùng `/setup` để chọn kênh chat trước!", ephemeral=True)
-        return
-
     if interaction.user.voice is None:
         await interaction.response.send_message("⚠️ Bạn phải vào một kênh thoại (Voice Channel) trước!", ephemeral=True)
         return
+
+    # Nếu chưa setup, lấy luôn kênh hiện tại làm kênh chat
+    if not state.setup_channel_id:
+        state.setup_channel_id = interaction.channel.id
+        auto_setup_msg = f"✅ Tự động thiết lập kênh nghe TTS: {interaction.channel.mention}\n"
+    else:
+        auto_setup_msg = ""
+
 
     await interaction.response.defer()
 
@@ -287,7 +291,7 @@ async def slash_join(interaction: discord.Interaction):
             tts_worker(interaction.guild.voice_client, state)
         )
 
-    await interaction.followup.send(f"👋 Đã tham gia **{voice_channel.name}**. Hãy chat vào kênh đã setup để bot đọc!")
+    await interaction.followup.send(f"{auto_setup_msg}👋 Đã tham gia **{voice_channel.name}**. Hãy chat vào kênh đã setup để bot đọc!")
 
 @tree.command(name="leave", description="Bot rời kênh thoại và xóa hàng đợi")
 async def slash_leave(interaction: discord.Interaction):
