@@ -12,6 +12,7 @@ import signal
 import subprocess
 import argparse
 import aiohttp
+import emoji
 from dotenv import load_dotenv
 
 # -- Logging --
@@ -85,6 +86,7 @@ class GuildState:
         self.queue = asyncio.Queue()
         self.play_task = None
         self.speaker = DEFAULT_SPEAKER
+        self.skip_emoji = False
 
 guild_states = {}
 
@@ -159,11 +161,13 @@ def auto_start_clones():
 # ---------------------------------------------------------
 # 2. XỬ LÝ VĂN BẢN VÀ SINH ÂM THANH (QUA BACKEND API)
 # ---------------------------------------------------------
-def clean_text(text):
-    """Xóa link, tag người dùng, emoji để tránh bot đọc những thứ vô nghĩa"""
+def clean_text(text, state):
+    """Xóa link, tag người dùng, custom emoji để tránh bot đọc những thứ vô nghĩa"""
     text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
     text = re.sub(r'<@!?\d+>', '', text)  # Xóa tag @user
     text = re.sub(r'<:\w+:\d+>', '', text)  # Xóa custom emoji
+    if state.skip_emoji:
+        text = emoji.replace_emoji(text, replace='') # Xóa unicode emoji
     return text.strip()
 
 async def generate_audio(text, speaker, filepath):
@@ -367,6 +371,15 @@ async def slash_skip(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("Không có gì để bỏ qua.", ephemeral=True)
 
+@tree.command(name="skip_emoji", description="Bật/Tắt chế độ bot bỏ qua emoji khi đọc")
+async def slash_skip_emoji(interaction: discord.Interaction):
+    """[/skip_emoji] Bật tắt bỏ qua Emoji"""
+    state = get_state(interaction.guild.id)
+    state.skip_emoji = not state.skip_emoji
+    
+    status_str = "**BẬT** (Bot sẽ bỏ qua không đọc emoji)" if state.skip_emoji else "**TẮT** (Bot sẽ cố gắng đọc emoji)"
+    await interaction.response.send_message(f"✅ Đã **{status_str}** chế độ bỏ qua Unicode Emoji.")
+
 @tree.command(name="status", description="Xem trạng thái hiện tại của bot trong server này")
 @app_commands.default_permissions(administrator=True)
 async def slash_status(interaction: discord.Interaction):
@@ -396,9 +409,10 @@ async def slash_status(interaction: discord.Interaction):
     embed = discord.Embed(title="📊 Trạng thái Bot TTS", color=0x5865F2)
     embed.add_field(name="🤖 Instance", value=clone_label, inline=True)
     embed.add_field(name="📝 Kênh lắng nghe", value=ch_str, inline=True)
-    embed.add_field(name="� Hàng đợi", value=f"`{queue_size}` câu", inline=True)
+    embed.add_field(name="💬 Hàng đợi", value=f"`{queue_size}` câu", inline=True)
     embed.add_field(name="🎙️ Giọng đọc", value=SPEAKER_NAMES.get(state.speaker, state.speaker), inline=True)
     embed.add_field(name="🖥️ TTS Backend", value=backend_status, inline=True)
+    embed.add_field(name="🚫 Bỏ qua Emoji", value="Bật" if state.skip_emoji else "Tắt", inline=True)
     await interaction.response.send_message(embed=embed)
 
 @tree.command(name="help", description="Hiện danh sách tất cả lệnh của bot")
@@ -425,6 +439,7 @@ async def slash_help(interaction: discord.Interaction):
             "`/join` — Bot vào kênh thoại bạn đang đứng\n"
             "`/leave` — Bot rời kênh thoại, xóa hàng đợi\n"
             "`/skip` — Bỏ qua câu đang đọc\n"
+            "`/skip_emoji` — Bật/tắt bỏ đọc Emoji (Biểu tượng cảm xúc)\n"
             "`/voice` — Đổi giọng đọc cho server\n"
             "`/ping` — Kiểm tra kết nối Bot và Backend"
         ),
@@ -604,7 +619,7 @@ async def on_message(message):
     # log.info(f"[Message] {message.author}: {message.content} (Kênh: {message.channel.id}, Setup: {state.setup_channel_id})")
 
     if message.channel.id == state.setup_channel_id and message.guild.voice_client:
-        text = clean_text(message.content)
+        text = clean_text(message.content, state)
 
         if len(text) > MAX_TEXT_LENGTH:
             await message.channel.send(f"⚠️ Tin nhắn quá dài (> {MAX_TEXT_LENGTH} ký tự). Bot sẽ không đọc để tránh kẹt mạng.")
