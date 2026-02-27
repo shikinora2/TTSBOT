@@ -125,8 +125,8 @@ def start_clone_process(clone_info):
     proc = subprocess.Popen(
         [python_exe, script, "--token", token, "--app-id", str(app_id), "--clone-id", clone_id],
         cwd=BASE_DIR,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=None,
+        stderr=None,
     )
     clone_processes[clone_id] = proc
     log.info(f"[Clone] Đã khởi chạy clone '{clone_id}' (PID: {proc.pid})")
@@ -331,10 +331,16 @@ async def slash_join(interaction: discord.Interaction):
 
     voice_channel = interaction.user.voice.channel
 
-    if interaction.guild.voice_client is not None:
-        await interaction.guild.voice_client.move_to(voice_channel)
-    else:
-        await voice_channel.connect()
+    try:
+        if interaction.guild.voice_client is not None:
+            await interaction.guild.voice_client.move_to(voice_channel)
+        else:
+            # Join the channel with a lower timeout to fail fast if there's a network issue
+            await voice_channel.connect(timeout=20.0, self_deaf=True)
+    except Exception as e:
+        log.error(f"[Tham gia Voice] Lỗi: {e}")
+        await interaction.followup.send(f"❌ Không thể kết nối tới kênh thoại. Lỗi: {e}")
+        return
 
     if state.play_task is None or state.play_task.done():
         state.play_task = bot.loop.create_task(
