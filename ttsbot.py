@@ -89,6 +89,7 @@ class GuildState:
         self.play_task = None
         self.speaker = DEFAULT_SPEAKER
         self.skip_emoji = False
+        self.leave_timer = None
 
 guild_states = {}
 
@@ -645,6 +646,66 @@ async def on_message(message):
                 await message.add_reaction("👀")
             except Exception:
                 pass
+
+# ---------------------------------------------------------
+# XỬ LÝ SỰ KIỆN VOICE (TỰ ĐỘNG THOÁT)
+# ---------------------------------------------------------
+@bot.event
+async def on_voice_state_update(member, before, after):
+    # Bỏ qua nếu là hành động của chính bot (tự join/leave/mute)
+    if member.id == bot.user.id:
+        return
+
+    guild = member.guild
+    voice_client = guild.voice_client
+
+    if voice_client is None or not voice_client.is_connected():
+        return
+
+    state = get_state(guild.id)
+    
+    # Kiểm tra kênh thoại hiện tại của Bot
+    bot_channel = voice_client.channel
+    
+    # Có người tham gia lại phòng Bot đang đứng -> Hủy đồng hồ đếm ngược (nếu có)
+    if after.channel == bot_channel:
+        if state.leave_timer and not state.leave_timer.done():
+            state.leave_timer.cancel()
+            state.leave_timer = None
+            log.info(f"[Auto-Leave] Đã hủy hẹn giờ rời kênh ở server {guild.name} do có người vào.")
+
+    # Có người rời khỏi phòng Bot đang đứng -> Kiểm tra phòng còn trống không
+    elif before.channel == bot_channel and after.channel != bot_channel:
+        # Số lượng người còn lại trong phòng (kể cả Bot)
+        # Nếu == 1 tức là chỉ còn mỗi Bot bơ vơ
+        if len(bot_channel.members) == 1:
+            log.info(f"[Auto-Leave] Kênh {bot_channel.name} trống, bắt đầu đếm ngược 60s...")
+            
+            async def _auto_disconnect():
+                try:
+                    await asyncio.sleep(60)
+                    if voice_client and voice_client.is_connected() and len(voice_client.channel.members) == 1:
+                        # Dọn dẹp hàng đợi và task nhạc
+                        if state.play_task:
+                            state.play_task.cancel()
+                            state.play_task = None
+                        state.queue = asyncio.Queue()
+                        
+                        await voice_client.disconnect()
+                        
+                        # Gửi thông báo vô text channel
+                        if state.setup_channel_id:
+                            text_channel = guild.get_channel(state.setup_channel_id)
+                            if text_channel:
+                                await text_channel.send("👋 Mọi người đi hết rồi, bot cũng xin phép out kênh thoại đây! Trả lại sự tĩnh lặng...")
+                        log.info(f"[Auto-Leave] Đã tự động rời kênh ở server {guild.name}.")
+                except asyncio.CancelledError:
+                    pass
+
+            # Hủy timer cũ nếu có và tạo timer mới 60s
+            if state.leave_timer and not state.leave_timer.done():
+                state.leave_timer.cancel()
+            state.leave_timer = bot.loop.create_task(_auto_disconnect())
 
 # ---------------------------------------------------------
 # GRACEFUL SHUTDOWN
