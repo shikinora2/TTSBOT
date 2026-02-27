@@ -125,10 +125,12 @@ log "Cài các thư viện phụ thuộc..."
     Unidecode num2words inflect cn2an jieba pypinyin \
     jamo gruut g2p-en anyascii \
     viphoneme underthesea vinorm \
-    huggingface_hub eng-to-ipa
-
 log "Cài Discord + HTTP packages..."
-"$PIP" install --no-cache-dir -q discord.py==2.6.4 PyNaCl python-dotenv aiohttp emoji gTTS
+"$PIP" install --no-cache-dir -q discord.py==2.6.4 PyNaCl python-dotenv aiohttp emoji
+
+log "Cài gTTS (Bỏ qua xung đột thư viện click)..."
+"$PIP" install --no-cache-dir -q gTTS --no-deps
+"$PIP" install --no-cache-dir -q requests
 
 log "Cài valtec-tts editable..."
 "$PIP" install --no-cache-dir -q -e "$VALTEC_DIR"
