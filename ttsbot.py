@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import asyncio
+import time
 import os
 import sys
 import re
@@ -338,8 +339,9 @@ async def slash_join(interaction: discord.Interaction):
             # Join the channel with a lower timeout to fail fast if there's a network issue
             await voice_channel.connect(timeout=20.0, self_deaf=True)
     except Exception as e:
-        log.error(f"[Tham gia Voice] Lỗi: {e}")
-        await interaction.followup.send(f"❌ Không thể kết nối tới kênh thoại. Lỗi: {e}")
+        err_msg = str(e) if str(e) else type(e).__name__
+        log.error(f"[Tham gia Voice] Lỗi: {err_msg}")
+        await interaction.followup.send(f"❌ Không thể kết nối tới kênh thoại. Lỗi: {err_msg}")
         return
 
     if state.play_task is None or state.play_task.done():
@@ -431,7 +433,8 @@ async def slash_help(interaction: discord.Interaction):
             "`/join` — Bot vào kênh thoại bạn đang đứng\n"
             "`/leave` — Bot rời kênh thoại, xóa hàng đợi\n"
             "`/skip` — Bỏ qua câu đang đọc\n"
-            "`/voice` — Đổi giọng đọc cho server"
+            "`/voice` — Đổi giọng đọc cho server\n"
+            "`/ping` — Kiểm tra kết nối Bot và Backend"
         ),
         inline=False
     )
@@ -445,6 +448,32 @@ async def slash_help(interaction: discord.Interaction):
     )
     embed.set_footer(text="🔒 = Chỉ Admin · Bot TTS · Valtec-TTS")
     await interaction.response.send_message(embed=embed)
+
+@tree.command(name="ping", description="Kiểm tra độ trễ của bot và trạng thái TTS Backend")
+async def slash_ping(interaction: discord.Interaction):
+    """[/ping] Kiểm tra kết nối Bot và Backend"""
+    await interaction.response.defer()
+    
+    bot_latency = round(bot.latency * 1000)
+    backend_status = "🔴 Offline"
+    backend_latency = "N/A"
+    
+    start_time = time.time()
+    try:
+        async with http_session.get(f"{TTS_BACKEND_URL}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            if resp.status == 200:
+                backend_status = "🟢 Online"
+                backend_latency = f"{round((time.time() - start_time) * 1000)}ms"
+    except Exception:
+        pass
+
+    embed = discord.Embed(title="🏓 Pong!", color=0x57F287 if backend_status == "🟢 Online" else 0xED4245)
+    embed.add_field(name="🤖 Bot Latency", value=f"`{bot_latency}ms`", inline=True)
+    embed.add_field(name="🖥️ TTS Backend", value=backend_status, inline=True)
+    if backend_latency != "N/A":
+        embed.add_field(name="⚡ Backend Latency", value=f"`{backend_latency}`", inline=True)
+        
+    await interaction.followup.send(embed=embed)
 
 # ---------------------------------------------------------
 # CLONE COMMANDS (CHỈ ADMIN — CHỈ BOT CHÍNH)
