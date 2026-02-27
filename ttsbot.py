@@ -256,7 +256,7 @@ async def on_ready():
                 log.warning(f"TTS Backend trả về status {resp.status}")
     except Exception as e:
         log.warning(f"⚠️  Không kết nối được TTS Backend tại {TTS_BACKEND_URL}: {e}")
-        log.warning("   Hãy chạy: python ttsserver.py")
+        log.warning("   Hãy chạy: python tts-server.py")
 
     try:
         # Sync as Global commands only. Do not copy to guilds to prevent duplication.
