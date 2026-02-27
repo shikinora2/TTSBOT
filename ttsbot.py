@@ -13,6 +13,7 @@ import subprocess
 import argparse
 import aiohttp
 import emoji
+from gtts import gTTS
 from dotenv import load_dotenv
 
 # -- Logging --
@@ -55,6 +56,7 @@ TTS_BACKEND_URL = os.getenv("TTS_BACKEND_URL", "http://127.0.0.1:5050")
 # Default speaker and mapping
 DEFAULT_SPEAKER = "THUHA"
 SPEAKER_NAMES = {
+    "GOOGLE": "🤖 Google Dịch (Fast & Stable)",
     "THUHA": "👩 Thu Hà (Soft female voice)",
     "MINHDUC": "👨 Minh Đức (Deep male voice)",
     "THANHTAM": "👧 Thanh Tâm (Young female voice)",
@@ -176,7 +178,18 @@ async def generate_audio(text, speaker, filepath):
     if http_session is None or http_session.closed:
         http_session = aiohttp.ClientSession()
 
-    # Chuyển đổi tên thân thiện (THUHA) sang ID của model (NF)
+    # Xử lý riêng cho luồng Google TTS (Nhanh, nhẹ, không dùng AI nội bộ)
+    if speaker == "GOOGLE":
+        try:
+            # GỌi gTTS và lưu trực tiếp ra file
+            tts = gTTS(text=text, lang='vi', slow=False)
+            tts.save(filepath)
+            return True
+        except Exception as e:
+            log.error(f"[Google TTS] Lỗi: {e}")
+            return False
+
+    # Chuyển đổi tên thân thiện (THUHA) sang ID của model Valtec (NF)
     actual_speaker = SPEAKER_MAPPING.get(speaker, "NF")
 
     url = f"{TTS_BACKEND_URL}/synthesize"
@@ -296,6 +309,7 @@ async def slash_setup(interaction: discord.Interaction, channel: discord.TextCha
 @tree.command(name="voice", description="Chọn giọng đọc TTS cho server")
 @app_commands.describe(speaker="Chọn một giọng đọc từ danh sách")
 @app_commands.choices(speaker=[
+    app_commands.Choice(name="🤖 Google Dịch (Fast & Stable)", value="GOOGLE"),
     app_commands.Choice(name="👩 Thu Hà (Soft female voice)", value="THUHA"),
     app_commands.Choice(name="👨 Minh Đức (Deep male voice)", value="MINHDUC"),
     app_commands.Choice(name="👧 Thanh Tâm (Young female voice)", value="THANHTAM"),

@@ -128,7 +128,7 @@ log "Cài các thư viện phụ thuộc..."
     huggingface_hub eng-to-ipa
 
 log "Cài Discord + HTTP packages..."
-"$PIP" install --no-cache-dir -q discord.py==2.6.4 PyNaCl python-dotenv aiohttp emoji
+"$PIP" install --no-cache-dir -q discord.py==2.6.4 PyNaCl python-dotenv aiohttp emoji gTTS
 
 log "Cài valtec-tts editable..."
 "$PIP" install --no-cache-dir -q -e "$VALTEC_DIR"
