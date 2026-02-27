@@ -218,21 +218,24 @@ async def tts_worker(voice_client, state):
 
             # Phát âm thanh
             if os.path.exists(filepath):
-                audio_source = discord.FFmpegPCMAudio(filepath)
-                voice_client.play(audio_source)
+                try:
+                    audio_source = discord.FFmpegPCMAudio(filepath)
+                    voice_client.play(audio_source)
 
-                while voice_client.is_playing():
-                    await asyncio.sleep(0.1)
-
-                if os.path.exists(filepath):
-                    os.remove(filepath)
+                    while voice_client.is_playing():
+                        await asyncio.sleep(0.1)
+                except Exception as e:
+                    log.error(f"[Playback Lỗi FFMPEG] {e}")
+                finally:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
 
             state.queue.task_done()
 
         except asyncio.CancelledError:
             break
         except Exception as e:
-            log.error(f"[Playback] {e}", exc_info=True)
+            log.error(f"[Worker Exception] {e}", exc_info=True)
 
 # ---------------------------------------------------------
 # 3. CÁC LỆNH (COMMANDS)
@@ -593,6 +596,9 @@ async def on_message(message):
         return
 
     state = get_state(message.guild.id)
+    
+    # Debug log để kiểm tra xem bot có nhận được tin nhắn hay không
+    # log.info(f"[Message] {message.author}: {message.content} (Kênh: {message.channel.id}, Setup: {state.setup_channel_id})")
 
     if message.channel.id == state.setup_channel_id and message.guild.voice_client:
         text = clean_text(message.content)
@@ -603,7 +609,10 @@ async def on_message(message):
 
         if text:
             await state.queue.put(text)
-            await message.add_reaction("👀")
+            try:
+                await message.add_reaction("👀")
+            except Exception:
+                pass
 
 # ---------------------------------------------------------
 # GRACEFUL SHUTDOWN
