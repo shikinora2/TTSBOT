@@ -54,7 +54,7 @@ APP_ID = int(args.app_id or os.getenv("DISCORD_APP_ID", "0"))
 TTS_BACKEND_URL = os.getenv("TTS_BACKEND_URL", "http://127.0.0.1:5050")
 
 # Default speaker and mapping
-DEFAULT_SPEAKER = "THUHA"
+DEFAULT_SPEAKER = "GOOGLE"
 SPEAKER_NAMES = {
     "GOOGLE": "🤖 Google Dịch (Fast & Stable)",
     "THUHA": "👩 Thu Hà (Soft female voice)",
