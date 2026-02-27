@@ -255,7 +255,7 @@ async def on_ready():
                 log.warning(f"TTS Backend trả về status {resp.status}")
     except Exception as e:
         log.warning(f"⚠️  Không kết nối được TTS Backend tại {TTS_BACKEND_URL}: {e}")
-        log.warning("   Hãy chạy: python tts_server.py")
+        log.warning("   Hãy chạy: python ttsserver.py")
 
     try:
         # Đồng bộ lệnh cho từng server bot đang tham gia (để cập nhật ngay lập tức)
