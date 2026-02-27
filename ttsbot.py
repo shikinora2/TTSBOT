@@ -312,10 +312,10 @@ async def slash_join(interaction: discord.Interaction):
         await interaction.response.send_message("⚠️ Bạn phải vào một kênh thoại (Voice Channel) trước!", ephemeral=True)
         return
 
-    # Nếu chưa setup, lấy luôn kênh hiện tại làm kênh chat
-    if not state.setup_channel_id:
+    # Nếu chưa setup, hoặc người dùng gọi /join ở kênh khác, cập nhật lại kênh text
+    if not state.setup_channel_id or state.setup_channel_id != interaction.channel.id:
         state.setup_channel_id = interaction.channel.id
-        auto_setup_msg = f"✅ Tự động thiết lập kênh nghe TTS: {interaction.channel.mention}\n"
+        auto_setup_msg = f"✅ Tự động chuyển kênh nghe TTS hiện tại sang: {interaction.channel.mention}\n"
     else:
         auto_setup_msg = ""
 
@@ -590,6 +590,9 @@ async def slash_clones(interaction: discord.Interaction):
 # ---------------------------------------------------------
 @bot.event
 async def on_message(message):
+    # Cần dòng này để các lệnh cũ (nếu có) vẫn hoạt động và không chặn event nội bộ
+    await bot.process_commands(message)
+
     if message.author.bot:
         return
     if not message.guild:
