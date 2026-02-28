@@ -15,6 +15,14 @@ import logging
 import argparse
 from pathlib import Path
 
+# --- CHỐNG QUÁ TẢI CPU ---
+# Giới hạn OpenMP và các thư viện toán học chỉ dùng 1 luồng CPU
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 # Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -35,9 +43,15 @@ parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.
 parser.add_argument("--port", type=int, default=5050, help="Port (default: 5050)")
 args = parser.parse_args()
 
-# ── Import sau khi parse args ─────────────────────────────────
 from aiohttp import web
 from valtec_tts import TTS
+
+try:
+    import torch
+    torch.set_num_threads(1)
+    log.info("Đã giới hạn PyTorch sử dụng 1 luồng CPU.")
+except ImportError:
+    pass
 
 # ── Tải model TTS 1 lần duy nhất ─────────────────────────────
 log.info("Đang tải mô hình Valtec-TTS vào RAM...")

@@ -41,7 +41,8 @@ args, _ = parser.parse_known_args()
 # ---------------------------------------------------------
 # 1. CẤU HÌNH CƠ BẢN
 # ---------------------------------------------------------
-MAX_TEXT_LENGTH = 150  # Giới hạn ký tự để VPS không bị quá tải (OOM)
+MAX_TEXT_LENGTH = 100  # Giảm xuống 100 ký tự (chống spam/quá tải CPU)
+MAX_QUEUE_SIZE = 5     # Số lượng câu tối đa chờ đọc trong 1 server
 SPEAKER = "NF"         # Giọng cố định: Nữ miền Bắc
 CLONES_FILE = os.path.join(BASE_DIR, "clones.json")
 IS_CLONE = args.clone_id is not None
@@ -214,12 +215,13 @@ async def tts_worker(voice_client, state):
     """Tiến trình ngầm chạy liên tục để kiểm tra hàng đợi và phát âm thanh"""
     while True:
         try:
+            # Lấy tin nhắn từ hàng đợi
             text = await state.queue.get()
 
             if not text:
                 state.queue.task_done()
                 continue
-
+                
             filepath = os.path.join(BASE_DIR, f"temp_audio_{os.getpid()}_{id(state)}.wav")
 
             # Gọi Backend API để sinh audio
@@ -679,11 +681,11 @@ async def on_voice_state_update(member, before, after):
         # Số lượng người còn lại trong phòng (kể cả Bot)
         # Nếu == 1 tức là chỉ còn mỗi Bot bơ vơ
         if len(bot_channel.members) == 1:
-            log.info(f"[Auto-Leave] Kênh {bot_channel.name} trống, bắt đầu đếm ngược 60s...")
+            log.info(f"[Auto-Leave] Kênh {bot_channel.name} trống, bắt đầu đếm ngược 10s...")
             
             async def _auto_disconnect():
                 try:
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(10)
                     if voice_client and voice_client.is_connected() and len(voice_client.channel.members) == 1:
                         # Dọn dẹp hàng đợi và task nhạc
                         if state.play_task:
@@ -702,7 +704,7 @@ async def on_voice_state_update(member, before, after):
                 except asyncio.CancelledError:
                     pass
 
-            # Hủy timer cũ nếu có và tạo timer mới 60s
+            # Hủy timer cũ nếu có và tạo timer mới 10s
             if state.leave_timer and not state.leave_timer.done():
                 state.leave_timer.cancel()
             state.leave_timer = bot.loop.create_task(_auto_disconnect())
