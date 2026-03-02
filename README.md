@@ -1,19 +1,17 @@
-# 🤖 Discord TTS Bot — Valtec-TTS
+# 🤖 Discord TTS Bot — gTTS
 
-Bot Discord đọc tin nhắn bằng giọng nói tiếng Việt tự động.
-Giọng đọc: 👩‍🦰 **Nữ miền Bắc (NF)** · Model: Valtec-TTS 74.8M params · Chạy trên CPU.
+Bot Discord tự động đọc tin nhắn bằng giọng nói Tiếng Việt.  
+Giọng đọc: **Google Text-to-Speech (gTTS)** · Không cần GPU · Không cần model AI.
 
 ---
 
-## ⚡ Setup VPS — 1 dòng lệnh
-
-SSH vào VPS và chạy:
+## ⚡ Cài đặt VPS — 1 lệnh duy nhất
 
 ```bash
-git clone https://github.com/shikinora2/TTSBOT.git /root/ttsbot && cd /root/ttsbot && sudo bash setup.sh
+git clone https://github.com/shikinora2/TTSBOT.git /root/ttsbot && cd /root/ttsbot && bash setup.sh
 ```
 
-> ⏱ Mất khoảng **10–20 phút**. Script tự động làm tất cả: swap 2GB, Python 3.11, PyTorch, dependencies, systemd services.
+> ⏱ Hoàn tất trong **~1–2 phút**. Script tự động cài Python packages, ffmpeg, tạo file `.env` mẫu và đăng ký systemd service.
 
 ---
 
@@ -28,37 +26,52 @@ nano /root/ttsbot/.env
 ```env
 DISCORD_TOKEN=your_bot_token_here
 DISCORD_APP_ID=your_application_id_here
-TTS_BACKEND_URL=http://127.0.0.1:5050
 ```
 
-### 2. Khởi động
+### 2. Khởi động bot
 
 ```bash
-systemctl start tts-server    # Backend TTS (chạy trước)
-systemctl start ttsbot        # Discord Bot (chạy sau)
+systemctl start ttsbot
 ```
 
-Lần đầu bot sẽ **tự tải model ~500 MB** từ HuggingFace — chờ vài phút.
+### 3. Kiểm tra log
+
+```bash
+journalctl -u ttsbot -f
+```
+
+---
+
+## 🔄 Cập nhật bot (VPS)
+
+```bash
+cd /root/ttsbot && bash setup.sh
+```
+
+Script sẽ tự động:
+- Pull code mới nhất từ GitHub
+- Xóa cache `.pyc` cũ
+- Cài packages mới (nếu có)
+- Restart service
+
+> Clone bot cũng được cập nhật tự động — khi bot chính restart, nó spawn lại toàn bộ clone với code mới.
 
 ---
 
 ## 🏗️ Kiến trúc
 
 ```
-VPS Ubuntu (1GB RAM + 2GB Swap)
+VPS Ubuntu
 │
-├── tts_server.py         ← Backend HTTP, tải model 1 lần (~800MB)
-│   ├── POST /synthesize  ← Nhận text → trả file WAV
-│   ├── GET  /health      ← Kiểm tra trạng thái
-│   └── GET  /speakers    ← Danh sách giọng đọc
-│
-├── ttsbot.py             ← Discord Bot, gọi API (~50MB RAM)
-│   └── clone_1, clone_2  ← Các bot clone cũng dùng chung backend
-│
-└── valtec-tts-src/       ← Source code Valtec-TTS (local)
+└── ttsbot.py  ←  Discord Bot chính (systemd service)
+    │              Gọi Google TTS API để tổng hợp giọng nói
+    │
+    ├── clone_1  ←  Subprocess bot phụ (tự động restart cùng bot chính)
+    ├── clone_2
+    └── ...      ←  Đọc từ clones.json, dùng chung codebase
 ```
 
-> 💡 Bot **không tải model** — chỉ gọi backend qua HTTP. Dù chạy nhiều bot clone, model chỉ tải **1 lần duy nhất**.
+> 💡 Không cần backend riêng. Mỗi bot gọi trực tiếp Google TTS — nhẹ, đơn giản, không tốn RAM cho model.
 
 ---
 
@@ -67,11 +80,11 @@ VPS Ubuntu (1GB RAM + 2GB Swap)
 | Thành phần | Tối thiểu |
 |---|---|
 | OS | Ubuntu 22.04 / 24.04 LTS x64 |
-| RAM | **1 GB** (model ~800 MB + swap) |
-| Disk | 10 GB |
+| RAM | **512 MB** |
+| Disk | 2 GB |
 | CPU | 1 vCPU |
-| Python | **3.11** (vinorm không tương thích 3.12+) |
-| ffmpeg | Bắt buộc |
+| Python | **3.11** |
+| ffmpeg | Bắt buộc (tự cài bởi setup.sh) |
 
 ---
 
