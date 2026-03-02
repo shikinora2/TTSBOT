@@ -11,7 +11,6 @@ import logging
 import signal
 import subprocess
 import argparse
-import aiohttp
 import emoji
 from gtts import gTTS
 from dotenv import load_dotenv
@@ -43,7 +42,6 @@ args, _ = parser.parse_known_args()
 # ---------------------------------------------------------
 MAX_TEXT_LENGTH = 100  # Giảm xuống 100 ký tự (chống spam/quá tải CPU)
 MAX_QUEUE_SIZE = 5     # Số lượng câu tối đa chờ đọc trong 1 server
-SPEAKER = "NF"         # Giọng cố định: Nữ miền Bắc
 CLONES_FILE = os.path.join(BASE_DIR, "clones.json")
 IS_CLONE = args.clone_id is not None
 
@@ -51,36 +49,10 @@ IS_CLONE = args.clone_id is not None
 BOT_TOKEN = args.token or os.getenv("DISCORD_TOKEN")
 APP_ID = int(args.app_id or os.getenv("DISCORD_APP_ID", "0"))
 
-# TTS Backend URL
-TTS_BACKEND_URL = os.getenv("TTS_BACKEND_URL", "http://127.0.0.1:5050")
-
-# Default speaker and mapping
-DEFAULT_SPEAKER = "GOOGLE"
-SPEAKER_NAMES = {
-    "GOOGLE": "🤖 Google Dịch (Fast & Stable)",
-    "THUHA": "👩 Thu Hà (Soft female voice)",
-    "MINHDUC": "👨 Minh Đức (Deep male voice)",
-    "THANHTAM": "👧 Thanh Tâm (Young female voice)",
-    "QUANGHUY": "👦 Quang Huy (Young male voice)",
-    "HOANGNAM": "🧑 Hoàng Nam (Strong male voice)"
-}
-
-# Ánh xạ từ ID của bot sang ID của model Valtec-TTS
-SPEAKER_MAPPING = {
-    "THUHA": "NF",
-    "MINHDUC": "NM1",
-    "THANHTAM": "SF",
-    "QUANGHUY": "SM",
-    "HOANGNAM": "NM2"
-}
-
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents, application_id=APP_ID)
 tree = bot.tree  # Slash command tree
-
-# HTTP session (tạo khi bot ready, đóng khi shutdown)
-http_session = None
 
 # Quản lý trạng thái của từng Server (Guild)
 class GuildState:
@@ -88,7 +60,6 @@ class GuildState:
         self.setup_channel_id = None
         self.queue = asyncio.Queue()
         self.play_task = None
-        self.speaker = DEFAULT_SPEAKER
         self.skip_emoji = False
         self.leave_timer = None
 
@@ -174,41 +145,18 @@ def clean_text(text, state):
         text = emoji.replace_emoji(text, replace='') # Xóa unicode emoji
     return text.strip()
 
-async def generate_audio(text, speaker, filepath):
-    """Gọi TTS Backend API để tổng hợp giọng nói."""
-    global http_session
-    if http_session is None or http_session.closed:
-        http_session = aiohttp.ClientSession()
-
-    # Xử lý riêng cho luồng Google TTS (Nhanh, nhẹ, không dùng AI nội bộ)
-    if speaker == "GOOGLE":
-        try:
-            # GỌi gTTS và lưu trực tiếp ra file
+async def generate_audio(text, filepath):
+    """Sử dụng gTTS để đọc văn bản và lưu ra file."""
+    try:
+        def _tts_task():
             tts = gTTS(text=text, lang='vi', slow=False)
             tts.save(filepath)
-            return True
-        except Exception as e:
-            log.error(f"[Google TTS] Lỗi: {e}")
-            return False
-
-    # Chuyển đổi tên thân thiện (THUHA) sang ID của model Valtec (NF)
-    actual_speaker = SPEAKER_MAPPING.get(speaker, "NF")
-
-    url = f"{TTS_BACKEND_URL}/synthesize"
-    payload = {"text": text, "speaker": actual_speaker}
-
-    try:
-        async with http_session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-            if resp.status == 200:
-                with open(filepath, "wb") as f:
-                    f.write(await resp.read())
-                return True
-            else:
-                error = await resp.text()
-                log.error(f"[TTS API] Status {resp.status}: {error}")
-                return False
-    except aiohttp.ClientError as e:
-        log.error(f"[TTS API] Connection error: {e}")
+            
+        # Chạy trong luồng riêng để tránh khóa (block) bot Discord
+        await asyncio.to_thread(_tts_task)
+        return True
+    except Exception as e:
+        log.error(f"[Google TTS] Lỗi: {e}")
         return False
 
 async def tts_worker(voice_client, state):
@@ -225,7 +173,7 @@ async def tts_worker(voice_client, state):
             filepath = os.path.join(BASE_DIR, f"temp_audio_{os.getpid()}_{id(state)}.wav")
 
             # Gọi Backend API để sinh audio
-            success = await generate_audio(text, state.speaker, filepath)
+            success = await generate_audio(text, filepath)
 
             if not success:
                 log.warning(f"[TTS] Không sinh được audio cho: '{text[:50]}...'")
@@ -262,24 +210,8 @@ async def tts_worker(voice_client, state):
 # ---------------------------------------------------------
 @bot.event
 async def on_ready():
-    global http_session
     clone_label = f" (Clone: {args.clone_id})" if IS_CLONE else ""
     log.info(f'Đã đăng nhập thành công: {bot.user.name} ({bot.user.id}){clone_label}')
-
-    # Tạo HTTP session
-    http_session = aiohttp.ClientSession()
-
-    # Kiểm tra backend
-    try:
-        async with http_session.get(f"{TTS_BACKEND_URL}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                log.info(f"TTS Backend OK — Speakers: {data.get('speakers', [])}")
-            else:
-                log.warning(f"TTS Backend trả về status {resp.status}")
-    except Exception as e:
-        log.warning(f"⚠️  Không kết nối được TTS Backend tại {TTS_BACKEND_URL}: {e}")
-        log.warning("   Hãy chạy: python tts-server.py")
 
     try:
         # Sync as Global commands only. Do not copy to guilds to prevent duplication.
@@ -308,22 +240,6 @@ async def slash_setup(interaction: discord.Interaction, channel: discord.TextCha
         channel = interaction.channel
     state.setup_channel_id = channel.id
     await interaction.response.send_message(f"✅ Đã thiết lập kênh lắng nghe TTS tại: {channel.mention}")
-
-@tree.command(name="voice", description="Chọn giọng đọc TTS cho server")
-@app_commands.describe(speaker="Chọn một giọng đọc từ danh sách")
-@app_commands.choices(speaker=[
-    app_commands.Choice(name="🤖 Google Dịch (Fast & Stable)", value="GOOGLE"),
-    app_commands.Choice(name="👩 Thu Hà (Soft female voice)", value="THUHA"),
-    app_commands.Choice(name="👨 Minh Đức (Deep male voice)", value="MINHDUC"),
-    app_commands.Choice(name="👧 Thanh Tâm (Young female voice)", value="THANHTAM"),
-    app_commands.Choice(name="👦 Quang Huy (Young male voice)", value="QUANGHUY"),
-    app_commands.Choice(name="🧑 Hoàng Nam (Strong male voice)", value="HOANGNAM"),
-])
-async def slash_voice(interaction: discord.Interaction, speaker: app_commands.Choice[str]):
-    """[/voice] Đổi giọng đọc TTS"""
-    state = get_state(interaction.guild.id)
-    state.speaker = speaker.value
-    await interaction.response.send_message(f"✅ Đã đổi giọng đọc thành: **{speaker.name}**")
 
 @tree.command(name="join", description="Gọi bot vào kênh thoại bạn đang đứng")
 async def slash_join(interaction: discord.Interaction):
@@ -414,21 +330,11 @@ async def slash_status(interaction: discord.Interaction):
     queue_size = state.queue.qsize()
     clone_label = f"Clone: {args.clone_id}" if IS_CLONE else "Bot chính"
 
-    # Kiểm tra backend status
-    backend_status = "🔴 Offline"
-    try:
-        async with http_session.get(f"{TTS_BACKEND_URL}/health", timeout=aiohttp.ClientTimeout(total=3)) as resp:
-            if resp.status == 200:
-                backend_status = "🟢 Online"
-    except Exception:
-        pass
-
     embed = discord.Embed(title="📊 Trạng thái Bot TTS", color=0x5865F2)
     embed.add_field(name="🤖 Instance", value=clone_label, inline=True)
     embed.add_field(name="📝 Kênh lắng nghe", value=ch_str, inline=True)
     embed.add_field(name="💬 Hàng đợi", value=f"`{queue_size}` câu", inline=True)
-    embed.add_field(name="🎙️ Giọng đọc", value=SPEAKER_NAMES.get(state.speaker, state.speaker), inline=True)
-    embed.add_field(name="🖥️ TTS Backend", value=backend_status, inline=True)
+    embed.add_field(name="🎙️ Giọng đọc", value="🤖 Google Dịch", inline=True)
     embed.add_field(name="🚫 Bỏ qua Emoji", value="Bật" if state.skip_emoji else "Tắt", inline=True)
     await interaction.response.send_message(embed=embed)
 
@@ -436,7 +342,7 @@ async def slash_status(interaction: discord.Interaction):
 async def slash_help(interaction: discord.Interaction):
     embed = discord.Embed(
         title="📖 Danh sách lệnh Bot TTS",
-        description="Bot đọc văn bản thành giọng nói Tiếng Việt.\nDùng lệnh `/voice` để đổi giọng đọc.",
+        description="Bot đọc văn bản thành giọng nói Tiếng Việt.",
         color=0x57F287
     )
     embed.add_field(
@@ -457,8 +363,7 @@ async def slash_help(interaction: discord.Interaction):
             "`/leave` — Bot rời kênh thoại, xóa hàng đợi\n"
             "`/skip` — Bỏ qua câu đang đọc\n"
             "`/skip_emoji` — Bật/tắt bỏ đọc Emoji (Biểu tượng cảm xúc)\n"
-            "`/voice` — Đổi giọng đọc cho server\n"
-            "`/ping` — Kiểm tra kết nối Bot và Backend"
+            "`/ping` — Kiểm tra độ trễ của Bot"
         ),
         inline=False
     )
@@ -473,29 +378,15 @@ async def slash_help(interaction: discord.Interaction):
     embed.set_footer(text="🔒 = Chỉ Admin · Bot TTS · Valtec-TTS")
     await interaction.response.send_message(embed=embed)
 
-@tree.command(name="ping", description="Kiểm tra độ trễ của bot và trạng thái TTS Backend")
+@tree.command(name="ping", description="Kiểm tra độ trễ của bot")
 async def slash_ping(interaction: discord.Interaction):
-    """[/ping] Kiểm tra kết nối Bot và Backend"""
+    """[/ping] Kiểm tra kết nối Bot"""
     await interaction.response.defer()
     
     bot_latency = round(bot.latency * 1000)
-    backend_status = "🔴 Offline"
-    backend_latency = "N/A"
-    
-    start_time = time.time()
-    try:
-        async with http_session.get(f"{TTS_BACKEND_URL}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
-            if resp.status == 200:
-                backend_status = "🟢 Online"
-                backend_latency = f"{round((time.time() - start_time) * 1000)}ms"
-    except Exception:
-        pass
 
-    embed = discord.Embed(title="🏓 Pong!", color=0x57F287 if backend_status == "🟢 Online" else 0xED4245)
+    embed = discord.Embed(title="🏓 Pong!", color=0x57F287)
     embed.add_field(name="🤖 Bot Latency", value=f"`{bot_latency}ms`", inline=True)
-    embed.add_field(name="🖥️ TTS Backend", value=backend_status, inline=True)
-    if backend_latency != "N/A":
-        embed.add_field(name="⚡ Backend Latency", value=f"`{backend_latency}`", inline=True)
         
     await interaction.followup.send(embed=embed)
 
@@ -725,9 +616,6 @@ async def shutdown():
         if guild.voice_client:
             await guild.voice_client.disconnect(force=True)
 
-    if http_session and not http_session.closed:
-        await http_session.close()
-
     await bot.close()
 
 # ---------------------------------------------------------
@@ -741,7 +629,6 @@ if __name__ == "__main__":
 
     clone_label = f" (Clone: {args.clone_id})" if IS_CLONE else ""
     log.info(f"Khởi động bot{clone_label}...")
-    log.info(f"TTS Backend: {TTS_BACKEND_URL}")
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

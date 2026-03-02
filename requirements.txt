@@ -1,34 +1,4 @@
-# Discord bot
 discord.py==2.6.4
 PyNaCl==1.6.2
 python-dotenv==1.2.1
-aiohttp>=3.9.0
-
-# PyTorch CPU (VPS không có GPU)
-# Cài riêng bằng lệnh: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-# (không để ở đây vì cần --index-url riêng)
-
-# Dependencies của valtec-tts
-numpy
-scipy
-soundfile
-librosa
-tqdm
-Unidecode
-num2words
-inflect
-cn2an
-jieba
-pypinyin
-jamo
-gruut
-g2p-en
-anyascii
-viphoneme
-underthesea
-vinorm
-huggingface_hub
-eng-to-ipa
-
-# valtec-tts: cài từ local source
-# pip install -e ./valtec-tts-src
+gTTS==2.5.1
