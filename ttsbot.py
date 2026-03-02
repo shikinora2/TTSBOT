@@ -257,15 +257,25 @@ async def slash_join(interaction: discord.Interaction):
         auto_setup_msg = ""
 
 
-    await interaction.response.defer()
-
     voice_channel = interaction.user.voice.channel
 
+    # Nếu bot đang ở kênh khác và đang hoạt động → chặn cướp kênh
+    vc = interaction.guild.voice_client
+    if vc is not None and vc.is_connected() and vc.channel != voice_channel:
+        await interaction.response.send_message(
+            f"⛔ Bot đang hoạt động ở kênh **{vc.channel.name}** rồi!\n"
+            f"Vui lòng vào kênh đó hoặc dùng `/leave` để giải phóng bot trước.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+
     try:
-        if interaction.guild.voice_client is not None:
-            await interaction.guild.voice_client.move_to(voice_channel)
+        if vc is not None and vc.is_connected():
+            # Cùng kênh, chỉ cần đảm bảo worker đang chạy
+            pass
         else:
-            # Join the channel with a lower timeout to fail fast if there's a network issue
             await voice_channel.connect(timeout=20.0, self_deaf=True)
     except Exception as e:
         err_msg = str(e) if str(e) else type(e).__name__
@@ -572,11 +582,11 @@ async def on_voice_state_update(member, before, after):
         # Số lượng người còn lại trong phòng (kể cả Bot)
         # Nếu == 1 tức là chỉ còn mỗi Bot bơ vơ
         if len(bot_channel.members) == 1:
-            log.info(f"[Auto-Leave] Kênh {bot_channel.name} trống, bắt đầu đếm ngược 10s...")
+            log.info(f"[Auto-Leave] Kênh {bot_channel.name} trống, bắt đầu đếm ngược 20s...")
             
             async def _auto_disconnect():
                 try:
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(20)
                     if voice_client and voice_client.is_connected() and len(voice_client.channel.members) == 1:
                         # Dọn dẹp hàng đợi và task nhạc
                         if state.play_task:
@@ -595,7 +605,7 @@ async def on_voice_state_update(member, before, after):
                 except asyncio.CancelledError:
                     pass
 
-            # Hủy timer cũ nếu có và tạo timer mới 10s
+            # Hủy timer cũ nếu có và tạo timer mới 20s
             if state.leave_timer and not state.leave_timer.done():
                 state.leave_timer.cancel()
             state.leave_timer = bot.loop.create_task(_auto_disconnect())
