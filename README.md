@@ -110,46 +110,60 @@ VPS Ubuntu
 ### 🔒 Lệnh Admin (chỉ admin server)
 
 | Lệnh | Chức năng |
-|---|---|
-| `/setup [#kênh]` | Chọn kênh text để bot lắng nghe |
-| `/status` | Xem trạng thái bot + backend |
-| `/clone token:<TOKEN> app_id:<ID>` | Nhân bản thêm 1 bot độc lập |
-| `/unclone clone_id:<ID>` | Xóa 1 bot clone |
-| `/clones` | Xem danh sách bot clone |
+### 🔒 Lệnh Admin
 
-### 🌐 Lệnh mọi người
+| Lệnh | Chức năng |
+|---|---|
+| `/setup [kênh]` | Chọn kênh text để bot lắng nghe |
+| `/status` | Xem trạng thái bot trong server |
+| `/clone <token> <app_id>` | Tạo thêm 1 bot clone độc lập |
+| `/unclone <id>` | Xóa và dừng 1 bot clone |
+| `/clones` | Xem danh sách clone đang chạy |
+
+### 🔊 Lệnh Mọi người
 
 | Lệnh | Chức năng |
 |---|---|
 | `/join` | Bot vào kênh thoại bạn đang đứng |
 | `/leave` | Bot rời kênh thoại, xóa hàng đợi |
 | `/skip` | Bỏ qua câu đang đọc |
+| `/skip_emoji` | Bật/tắt bỏ qua emoji khi đọc |
+| `/ping` | Kiểm tra độ trễ |
 | `/help` | Xem danh sách lệnh |
 
 ### 💬 Cách dùng TTS
 
-1. Admin chạy `/setup #kênh-chat`
-2. Ai đó chạy `/join` (phải đang ở voice channel)
+1. Admin chạy `/setup` để chọn kênh lắng nghe
+2. Chạy `/join` để bot vào kênh thoại
 3. **Gõ text** vào kênh đã setup → bot tự đọc
 4. Bot react 👀 khi nhận tin nhắn
-5. Giới hạn **150 ký tự**/tin nhắn
+5. Giới hạn **100 ký tự** mỗi tin nhắn · Tối đa **5 câu** trong hàng đợi
 
 ---
 
-## 🔄 Quản lý service
+## 🤖 Tính năng Clone Bot
+
+Chạy nhiều bot TTS độc lập từ 1 VPS duy nhất:
+
+1. Tạo bot mới tại [Discord Developer Portal](https://discord.com/developers/applications)
+2. Lấy **Token** + **Application ID** của bot mới
+3. Bật **Message Content Intent** cho bot mới
+4. Admin gõ trong Discord: `/clone token:NEW_TOKEN app_id:NEW_APP_ID`
+5. Bot clone online trong vài giây
+
+> ⚠️ Mỗi bot cần **1 token riêng** — Discord giới hạn 1 bot chỉ ở 1 voice channel/server.  
+> Khi bot chính cập nhật và restart, **toàn bộ clone tự động restart theo**.
+
+---
+
+## 🛠️ Lệnh quản lý service
 
 ```bash
-# TTS Backend
-systemctl start   tts-server    # Khởi động backend
-systemctl stop    tts-server    # Dừng backend
-systemctl restart tts-server    # Khởi động lại
-journalctl -u tts-server -f     # Log realtime
-
-# Discord Bot
-systemctl start   ttsbot        # Khởi động bot
-systemctl stop    ttsbot        # Dừng bot
-systemctl restart ttsbot        # Khởi động lại
-journalctl -u ttsbot -f         # Log realtime
+systemctl start ttsbot      # Khởi động
+systemctl stop ttsbot       # Dừng
+systemctl restart ttsbot    # Khởi động lại
+systemctl status ttsbot     # Xem trạng thái
+journalctl -u ttsbot -f     # Xem log realtime
 ```
 
 ---
@@ -158,46 +172,10 @@ journalctl -u ttsbot -f         # Log realtime
 
 ```
 /root/ttsbot/
-├── tts_server.py       # Backend HTTP xử lý TTS ⭐
 ├── ttsbot.py           # Discord Bot ⭐
 ├── setup.sh            # Script setup all-in-one
-├── install.sh          # Script cài packages riêng
-├── requirements.txt    # Dependencies
+├── requirements.txt    # Python dependencies
 ├── clones.json         # Danh sách bot clone (tự tạo)
 ├── .env                # Token Discord (KHÔNG share)
-├── .env.example        # Mẫu file .env
-├── README.md
-└── valtec-tts-src/     # Source code Valtec-TTS
+└── README.md
 ```
-
----
-
-## 🔧 Nhân bản bot (/clone)
-
-Để có **2+ bot** hoạt động đồng thời trong 1 server:
-
-1. Tạo bot mới trên [Discord Developer Portal](https://discord.com/developers/applications)
-2. Lấy **Token** + **Application ID** mới
-3. Mời bot mới vào server (bật Message Content Intent)
-4. Admin gõ trong Discord: `/clone token:NEW_TOKEN app_id:NEW_APP_ID`
-5. Bot clone online trong vài giây, dùng **chung backend TTS**
-
-> ⚠️ Mỗi bot cần **1 token riêng** — Discord giới hạn 1 bot chỉ ở 1 voice channel/server.
-
----
-
-## 🔄 Cập nhật code
-
-```bash
-cd /root/ttsbot && git pull && systemctl restart tts-server ttsbot
-```
-
----
-
-## ⚠️ Lưu ý
-
-- **Python 3.11** bắt buộc — `vinorm` không tương thích 3.12+
-- Giới hạn **150 ký tự** mỗi tin nhắn để tránh OOM
-- Bot tự bỏ qua link, @mention, custom emoji
-- Model tự tải lần đầu (~500 MB), lưu tại `~/.cache/valtec_tts/`
-- Backend chạy trên `127.0.0.1:5050` — không mở ra internet
