@@ -67,14 +67,18 @@ fi
 echo ""
 echo -e "${BOLD}[2/6] Clone Code Bot...${RESET}"
 
-if [[ -d "$INSTALL_DIR" ]]; then
-    log "Đã có sẵn thư mục $INSTALL_DIR. Đang cập nhật code mới (git pull)..."
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+    log "Đã có sẵn thư mục $INSTALL_DIR. Đang reset về code mới nhất từ remote..."
     cd "$INSTALL_DIR"
-    git fetch origin
-    git reset --hard origin/main || warn "Reset git lỗi, có thể do chưa init git."
-    git pull || warn "Lỗi khi clone bản cập nhật qua Git."
+    git fetch --all
+    git reset --hard origin/main
+    # Xóa cache bytecode Python (tránh chạy nhầm file .pyc cũ)
+    find "$INSTALL_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    find "$INSTALL_DIR" -name "*.pyc" -delete 2>/dev/null || true
+    ok "Đã reset về origin/main: $(git log -1 --oneline)"
 else
-    log "Thư mục $INSTALL_DIR chưa có. Đang tải..."
+    log "Thư mục $INSTALL_DIR chưa có hoặc chưa init git. Đang clone..."
+    rm -rf "$INSTALL_DIR"
     git clone "$BOT_REPO" "$INSTALL_DIR"
 fi
 
