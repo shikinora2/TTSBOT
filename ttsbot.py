@@ -159,7 +159,7 @@ async def generate_audio(text, filepath):
         log.error(f"[Google TTS] Lỗi: {e}")
         return False
 
-async def tts_worker(voice_client, state):
+async def tts_worker(guild, state):
     """Tiến trình ngầm chạy liên tục để kiểm tra hàng đợi và phát âm thanh"""
     while True:
         try:
@@ -169,10 +169,17 @@ async def tts_worker(voice_client, state):
             if not text:
                 state.queue.task_done()
                 continue
-                
-            filepath = os.path.join(BASE_DIR, f"temp_audio_{os.getpid()}_{id(state)}.wav")
 
-            # Gọi Backend API để sinh audio
+            # Lấy voice_client tươi mỗi lần phát (tránh stale reference)
+            voice_client = guild.voice_client
+            if voice_client is None or not voice_client.is_connected():
+                log.warning("[TTS] Bot không còn ở kênh thoại, bỏ qua tin nhắn.")
+                state.queue.task_done()
+                continue
+
+            filepath = os.path.join(BASE_DIR, f"temp_audio_{os.getpid()}_{id(state)}.mp3")
+
+            # Sinh audio
             success = await generate_audio(text, filepath)
 
             if not success:
@@ -182,21 +189,26 @@ async def tts_worker(voice_client, state):
 
             # Đợi nếu bot đang nói câu trước đó
             while voice_client.is_playing():
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
 
             # Phát âm thanh
             if os.path.exists(filepath):
                 try:
                     audio_source = discord.FFmpegPCMAudio(filepath)
                     voice_client.play(audio_source)
+                    log.info(f"[TTS] Đang phát: '{text[:60]}'")
 
                     while voice_client.is_playing():
                         await asyncio.sleep(0.1)
                 except Exception as e:
                     log.error(f"[Playback Lỗi FFMPEG] {e}")
                 finally:
+                    await asyncio.sleep(0.2)
                     if os.path.exists(filepath):
-                        os.remove(filepath)
+                        try:
+                            os.remove(filepath)
+                        except Exception:
+                            pass
 
             state.queue.task_done()
 
@@ -285,7 +297,7 @@ async def slash_join(interaction: discord.Interaction):
 
     if state.play_task is None or state.play_task.done():
         state.play_task = bot.loop.create_task(
-            tts_worker(interaction.guild.voice_client, state)
+            tts_worker(interaction.guild, state)
         )
 
     await interaction.followup.send(f"{auto_setup_msg}👋 Đã tham gia **{voice_channel.name}**. Hãy chat vào kênh đã setup để bot đọc!")
@@ -532,23 +544,39 @@ async def on_message(message):
         return
 
     state = get_state(message.guild.id)
-    
-    # Debug log để kiểm tra xem bot có nhận được tin nhắn hay không
-    # log.info(f"[Message] {message.author}: {message.content} (Kênh: {message.channel.id}, Setup: {state.setup_channel_id})")
 
-    if message.channel.id == state.setup_channel_id and message.guild.voice_client:
-        text = clean_text(message.content, state)
+    # Bỏ qua nếu không phải kênh đã setup
+    if state.setup_channel_id is None or message.channel.id != state.setup_channel_id:
+        return
 
-        if len(text) > MAX_TEXT_LENGTH:
-            await message.channel.send(f"⚠️ Tin nhắn quá dài (> {MAX_TEXT_LENGTH} ký tự). Bot sẽ không đọc để tránh kẹt mạng.")
-            return
+    voice_client = message.guild.voice_client
+    if voice_client is None or not voice_client.is_connected():
+        return
 
-        if text:
-            await state.queue.put(text)
-            try:
-                await message.add_reaction("👀")
-            except Exception:
-                pass
+    # Đảm bảo worker đang chạy (phòng trường hợp worker chết bất ngờ)
+    if state.play_task is None or state.play_task.done():
+        state.play_task = bot.loop.create_task(tts_worker(message.guild, state))
+        log.info("[on_message] Đã khởi động lại TTS worker.")
+
+    text = clean_text(message.content, state)
+    log.info(f"[on_message] '{message.author}': '{text[:80]}' (queue={state.queue.qsize()})")
+
+    if not text:
+        return
+
+    if len(text) > MAX_TEXT_LENGTH:
+        await message.channel.send(f"⚠️ Tin nhắn quá dài (> {MAX_TEXT_LENGTH} ký tự). Bot sẽ không đọc để tránh kẹt mạng.")
+        return
+
+    if state.queue.qsize() >= MAX_QUEUE_SIZE:
+        await message.add_reaction("⏳")
+        return
+
+    await state.queue.put(text)
+    try:
+        await message.add_reaction("👀")
+    except Exception:
+        pass
 
 # ---------------------------------------------------------
 # XỬ LÝ SỰ KIỆN VOICE (TỰ ĐỘNG THOÁT)
