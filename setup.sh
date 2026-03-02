@@ -98,9 +98,18 @@ rm -rf /root/.cache/huggingface /root/.cache/valtec_tts ~/.cache/valtec_tts
 
 ok "Đã dọn sạch bong tài nguyên Valtec-TTS cũ. Mọi thứ trở nên mỏng nhẹ!"
 
-# ── 4. Tạo venv + cài packages ────────────────────────────────
+# ── 4. Cài ffmpeg + Python packages ──────────────────────────
 echo ""
-echo -e "${BOLD}[4/6] Cài Python packages vào virtual environment...${RESET}"
+echo -e "${BOLD}[4/6] Cài ffmpeg và Python packages...${RESET}"
+
+# Cài ffmpeg nếu chưa có (cần cho FFmpegPCMAudio của discord.py)
+if ! command -v ffmpeg &>/dev/null; then
+    log "Đang cài ffmpeg..."
+    apt-get update -q && apt-get install -y -q ffmpeg
+    ok "Đã cài ffmpeg."
+else
+    ok "ffmpeg đã có sẵn."
+fi
 
 # Xóa cache cũ của pip
 rm -rf ~/.cache/pip
