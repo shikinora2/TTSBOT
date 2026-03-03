@@ -328,7 +328,7 @@ async def slash_join(interaction: discord.Interaction):
         last_err = ""
         try:
             log.info(f"[Join] Kết nối tới '{voice_channel.name}'...")
-            await voice_channel.connect(timeout=30.0, reconnect=True, self_deaf=True)
+            await voice_channel.connect(timeout=30.0, reconnect=False, self_deaf=True)
             connected = True
             log.info(f"[Join] Kết nối thành công.")
         except discord.errors.ConnectionClosed as e:
@@ -358,7 +358,7 @@ async def slash_join(interaction: discord.Interaction):
                             pass
                         await asyncio.sleep(1.0)
                     log.info(f"[Join] Thử lại sau 4017...")
-                    await voice_channel.connect(timeout=30.0, reconnect=True, self_deaf=True)
+                    await voice_channel.connect(timeout=30.0, reconnect=False, self_deaf=True)
                     connected = True
                     log.info(f"[Join] Kết nối thành công (lần 2).")
                 except Exception as e2:
