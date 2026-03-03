@@ -175,7 +175,8 @@ User=root
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$VENV_DIR/bin/python $INSTALL_DIR/ttsbot.py
 Restart=always
-RestartSec=10
+RestartSec=30
+ExecStopPost=/bin/sleep 5
 StandardOutput=journal
 StandardError=journal
 Environment=PYTHONUNBUFFERED=1
