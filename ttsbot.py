@@ -310,75 +310,89 @@ async def slash_join(interaction: discord.Interaction):
     state.is_joining = True
 
     try:
-        # Dọn voice client cũ nếu còn treo
-        if vc is not None:
+        # Helper: gửi Gateway OP4 "leave voice" để Discord server xóa session cũ
+        async def _clear_voice_session():
             try:
-                await vc.disconnect(force=True)
-            except Exception:
-                pass
-            # Xóa khỏi internal cache của discord.py để tránh stale state
-            try:
-                interaction.guild._voice_states.pop(bot.user.id, None)
-            except Exception:
-                pass
-            await asyncio.sleep(2.0)
+                # Ngắt voice client local nếu còn
+                vc_now = interaction.guild.voice_client
+                if vc_now is not None:
+                    await vc_now.disconnect(force=True)
+                # Xóa internal cache discord.py
+                try:
+                    interaction.guild._voice_states.pop(bot.user.id, None)
+                except Exception:
+                    pass
+                # Gửi OP4 channel=None → báo Discord server bot đã rời voice
+                await bot.ws.voice_state(interaction.guild.id, None, self_mute=False, self_deaf=False)
+                log.info("[Join] Đã gửi OP4 voice_state(None) để xóa session cũ.")
+                await asyncio.sleep(1.5)
+            except Exception as ex:
+                log.warning(f"[Join] _clear_voice_session: {ex}")
 
-        # --- Thử connect lần đầu ---
+        # Dọn session cũ trước khi kết nối
+        await _clear_voice_session()
+
+        # Helper: thử connect 1 lần, trả về (True, "") hoặc (False, err_msg)
+        async def _try_connect():
+            try:
+                await voice_channel.connect(timeout=30.0, reconnect=False, self_deaf=True)
+                return True, ""
+            except discord.errors.ConnectionClosed as e:
+                return False, f"4017" if e.code == 4017 else f"ConnectionClosed code={e.code}"
+            except asyncio.TimeoutError:
+                return False, "TimeoutError"
+            except Exception as ex:
+                return False, str(ex) if str(ex) else type(ex).__name__
+
         connected = False
         last_err = ""
-        try:
-            log.info(f"[Join] Kết nối tới '{voice_channel.name}'...")
-            await voice_channel.connect(timeout=30.0, reconnect=False, self_deaf=True)
-            connected = True
-            log.info(f"[Join] Kết nối thành công.")
-        except discord.errors.ConnectionClosed as e:
-            last_err = f"ConnectionClosed code={e.code}"
-            log.warning(f"[Join] Lần 1: {last_err}")
-            if e.code == 4017:
-                # Discord server còn giữ session cũ — phải chờ nó hết TTL (~30-60s)
-                log.info(f"[Join] Lỗi 4017: session cũ chưa hết, chờ 30s...")
-                await interaction.followup.send(
-                    f"⏳ Discord còn giữ session cũ (lỗi 4017).\n"
-                    f"Bot sẽ tự thử lại sau **30 giây**...\n"
-                    f"_(Bạn không cần làm gì thêm)_"
-                )
+
+        # Lần 1
+        log.info(f"[Join] Kết nối tới '{voice_channel.name}' (lần 1)...")
+        connected, last_err = await _try_connect()
+
+        if connected:
+            log.info("[Join] Kết nối thành công (lần 1).")
+        elif last_err == "4017":
+            # Lần 1 bị 4017 → clear lại + chờ 30s + thử lần 2
+            log.warning("[Join] Lỗi 4017 lần 1 — clear session + chờ 30s...")
+            await interaction.followup.send(
+                "⏳ Discord còn giữ session cũ (lỗi 4017).\n"
+                "Bot sẽ tự thử lại sau **30 giây**...\n"
+                "_(Bạn không cần làm gì thêm)_"
+            )
+            await _clear_voice_session()
+            await asyncio.sleep(30.0)
+
+            log.info(f"[Join] Kết nối tới '{voice_channel.name}' (lần 2)...")
+            await _clear_voice_session()
+            connected, last_err = await _try_connect()
+
+            if connected:
+                log.info("[Join] Kết nối thành công (lần 2).")
+            elif last_err == "4017":
+                # Lần 2 vẫn 4017 → chờ thêm 30s nữa, lần 3
+                log.warning("[Join] Lỗi 4017 lần 2 — chờ thêm 30s...")
                 await asyncio.sleep(30.0)
-                # Thử lại lần 2 sau khi chờ
-                try:
-                    # Dọn lại một lần nữa
-                    vc2 = interaction.guild.voice_client
-                    if vc2 is not None:
-                        try:
-                            await vc2.disconnect(force=True)
-                        except Exception:
-                            pass
-                        try:
-                            interaction.guild._voice_states.pop(bot.user.id, None)
-                        except Exception:
-                            pass
-                        await asyncio.sleep(1.0)
-                    log.info(f"[Join] Thử lại sau 4017...")
-                    await voice_channel.connect(timeout=30.0, reconnect=False, self_deaf=True)
-                    connected = True
-                    log.info(f"[Join] Kết nối thành công (lần 2).")
-                except Exception as e2:
-                    last_err = str(e2) if str(e2) else type(e2).__name__
-                    log.error(f"[Join] Thất bại lần 2: {last_err}")
-        except asyncio.TimeoutError:
-            last_err = "TimeoutError"
-            log.warning(f"[Join] Timeout")
-        except Exception as e:
-            last_err = str(e) if str(e) else type(e).__name__
-            log.warning(f"[Join] Lỗi: {last_err}")
+
+                log.info(f"[Join] Kết nối tới '{voice_channel.name}' (lần 3)...")
+                await _clear_voice_session()
+                connected, last_err = await _try_connect()
+
+                if connected:
+                    log.info("[Join] Kết nối thành công (lần 3).")
+                else:
+                    log.error(f"[Join] Thất bại sau 3 lần: {last_err}")
+            else:
+                log.error(f"[Join] Thất bại lần 2: {last_err}")
+        else:
+            log.error(f"[Join] Thất bại lần 1: {last_err}")
 
         if not connected:
-            log.error(f"[Join] Thất bại: {last_err}")
             await interaction.followup.send(
-                f"❌ Không thể kết nối vào kênh thoại.\n"
-                f"Lỗi: `{last_err}`\n\n"
-                f"💡 **Cách khắc phục:**\n"
-                f"• Dùng `/leave` → chờ **30 giây** → `/join` lại\n"
-                f"• Nếu vẫn lỗi, chờ **60 giây** để Discord xóa session cũ hoàn toàn"
+                f"❌ Không thể kết nối vào kênh thoại sau 3 lần thử.\n"
+                f"Lỗi cuối: `{last_err}`\n\n"
+                f"💡 Chờ **60 giây** rồi thử `/join` lại."
             )
             return
 
