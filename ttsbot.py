@@ -58,10 +58,21 @@ tree = bot.tree  # Slash command tree
 class GuildState:
     def __init__(self):
         self.setup_channel_id = None
-        self.queue = asyncio.Queue()
+        self._queue = None          # Khởi tạo lazy để tránh "bound to different event loop"
         self.play_task = None
         self.skip_emoji = False
         self.leave_timer = None
+
+    @property
+    def queue(self):
+        # Luôn trả về Queue gắn với event loop hiện tại
+        if self._queue is None or self._queue._loop.is_closed():
+            self._queue = asyncio.Queue()
+        return self._queue
+
+    @queue.setter
+    def queue(self, value):
+        self._queue = value
 
 guild_states = {}
 
