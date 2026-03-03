@@ -62,6 +62,7 @@ class GuildState:
         self.play_task = None
         self.skip_emoji = False
         self.leave_timer = None
+        self.is_joining = False     # Lock chống gọi /join đồng thời nhiều lần
 
     @property
     def queue(self):
@@ -272,6 +273,11 @@ async def slash_join(interaction: discord.Interaction):
         await interaction.response.send_message("⚠️ Bạn phải vào một kênh thoại (Voice Channel) trước!", ephemeral=True)
         return
 
+    # Chống spam /join đồng thời
+    if state.is_joining:
+        await interaction.response.send_message("⏳ Bot đang trong quá trình kết nối, vui lòng đợi...", ephemeral=True)
+        return
+
     # Nếu chưa setup, hoặc người dùng gọi /join ở kênh khác, cập nhật lại kênh text
     if not state.setup_channel_id or state.setup_channel_id != interaction.channel.id:
         state.setup_channel_id = interaction.channel.id
@@ -301,60 +307,90 @@ async def slash_join(interaction: discord.Interaction):
         return
 
     await interaction.response.defer()
+    state.is_joining = True
 
-    # Dọn voice client cũ nếu còn treo
-    if vc is not None:
-        try:
-            await vc.disconnect(force=True)
-        except Exception:
-            pass
-        await asyncio.sleep(1.0)
+    try:
+        # Dọn voice client cũ nếu còn treo
+        if vc is not None:
+            try:
+                await vc.disconnect(force=True)
+            except Exception:
+                pass
+            # Xóa khỏi internal cache của discord.py để tránh stale state
+            try:
+                interaction.guild._voice_states.pop(bot.user.id, None)
+            except Exception:
+                pass
+            await asyncio.sleep(2.0)
 
-    # Retry tối đa 3 lần, mỗi lần tăng delay
-    # Lỗi 4017 = Discord còn giữ session cũ → chờ lâu hơn rồi thử lại
-    last_err = ""
-    for attempt in range(1, 4):
+        # --- Thử connect lần đầu ---
+        connected = False
+        last_err = ""
         try:
-            log.info(f"[Join] Kết nối tới '{voice_channel.name}' (lần {attempt}/3)...")
-            await voice_channel.connect(timeout=30.0, reconnect=False, self_deaf=True)
+            log.info(f"[Join] Kết nối tới '{voice_channel.name}'...")
+            await voice_channel.connect(timeout=30.0, reconnect=True, self_deaf=True)
+            connected = True
             log.info(f"[Join] Kết nối thành công.")
-            break
         except discord.errors.ConnectionClosed as e:
             last_err = f"ConnectionClosed code={e.code}"
-            log.warning(f"[Join] Lần {attempt}: {last_err}")
+            log.warning(f"[Join] Lần 1: {last_err}")
             if e.code == 4017:
-                # Session cũ chưa hết — chờ Discord tự giải phóng
-                wait = 5.0 * attempt
-                log.info(f"[Join] Lỗi 4017, chờ {wait}s để Discord giải phóng session...")
-                await asyncio.sleep(wait)
-            else:
-                await asyncio.sleep(2.0)
+                # Discord server còn giữ session cũ — phải chờ nó hết TTL (~30-60s)
+                log.info(f"[Join] Lỗi 4017: session cũ chưa hết, chờ 30s...")
+                await interaction.followup.send(
+                    f"⏳ Discord còn giữ session cũ (lỗi 4017).\n"
+                    f"Bot sẽ tự thử lại sau **30 giây**...\n"
+                    f"_(Bạn không cần làm gì thêm)_"
+                )
+                await asyncio.sleep(30.0)
+                # Thử lại lần 2 sau khi chờ
+                try:
+                    # Dọn lại một lần nữa
+                    vc2 = interaction.guild.voice_client
+                    if vc2 is not None:
+                        try:
+                            await vc2.disconnect(force=True)
+                        except Exception:
+                            pass
+                        try:
+                            interaction.guild._voice_states.pop(bot.user.id, None)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(1.0)
+                    log.info(f"[Join] Thử lại sau 4017...")
+                    await voice_channel.connect(timeout=30.0, reconnect=True, self_deaf=True)
+                    connected = True
+                    log.info(f"[Join] Kết nối thành công (lần 2).")
+                except Exception as e2:
+                    last_err = str(e2) if str(e2) else type(e2).__name__
+                    log.error(f"[Join] Thất bại lần 2: {last_err}")
         except asyncio.TimeoutError:
             last_err = "TimeoutError"
-            log.warning(f"[Join] Lần {attempt}: Timeout")
-            await asyncio.sleep(2.0)
+            log.warning(f"[Join] Timeout")
         except Exception as e:
             last_err = str(e) if str(e) else type(e).__name__
-            log.warning(f"[Join] Lần {attempt}: {last_err}")
-            await asyncio.sleep(2.0)
-    else:
-        # Hết 3 lần vẫn thất bại
-        log.error(f"[Join] Thất bại sau 3 lần: {last_err}")
+            log.warning(f"[Join] Lỗi: {last_err}")
+
+        if not connected:
+            log.error(f"[Join] Thất bại: {last_err}")
+            await interaction.followup.send(
+                f"❌ Không thể kết nối vào kênh thoại.\n"
+                f"Lỗi: `{last_err}`\n\n"
+                f"💡 **Cách khắc phục:**\n"
+                f"• Dùng `/leave` → chờ **30 giây** → `/join` lại\n"
+                f"• Nếu vẫn lỗi, chờ **60 giây** để Discord xóa session cũ hoàn toàn"
+            )
+            return
+
+        if state.play_task is None or state.play_task.done():
+            state.play_task = bot.loop.create_task(tts_worker(interaction.guild, state))
+
         await interaction.followup.send(
-            f"❌ Không thể kết nối sau 3 lần thử.\n"
-            f"Lỗi: `{last_err}`\n\n"
-            f"💡 **Cách khắc phục:**\n"
-            f"• Dùng `/leave` → chờ **10 giây** → `/join` lại\n"
-            f"• Nếu vẫn lỗi, chờ **60 giây** để Discord xóa session cũ hoàn toàn"
+            f"{auto_setup_msg}👋 Đã tham gia **{voice_channel.name}**. Hãy chat vào kênh đã setup để bot đọc!"
         )
-        return
 
-    if state.play_task is None or state.play_task.done():
-        state.play_task = bot.loop.create_task(tts_worker(interaction.guild, state))
-
-    await interaction.followup.send(
-        f"{auto_setup_msg}👋 Đã tham gia **{voice_channel.name}**. Hãy chat vào kênh đã setup để bot đọc!"
-    )
+    finally:
+        state.is_joining = False
 
 @tree.command(name="leave", description="Bot rời kênh thoại và xóa hàng đợi")
 async def slash_leave(interaction: discord.Interaction):
