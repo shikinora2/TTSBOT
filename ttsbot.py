@@ -279,11 +279,19 @@ async def slash_join(interaction: discord.Interaction):
     else:
         auto_setup_msg = ""
 
-
     voice_channel = interaction.user.voice.channel
 
-    # Nếu bot đang ở kênh khác và đang hoạt động → chặn cướp kênh
+    # Nếu bot đã ở đúng kênh → đảm bảo worker chạy
     vc = interaction.guild.voice_client
+    if vc is not None and vc.is_connected() and vc.channel == voice_channel:
+        if state.play_task is None or state.play_task.done():
+            state.play_task = bot.loop.create_task(tts_worker(interaction.guild, state))
+        await interaction.response.send_message(
+            f"✅ Bot đang ở **{voice_channel.name}** rồi!", ephemeral=True
+        )
+        return
+
+    # Nếu bot đang ở kênh khác → chặn cướp kênh
     if vc is not None and vc.is_connected() and vc.channel != voice_channel:
         await interaction.response.send_message(
             f"⛔ Bot đang hoạt động ở kênh **{vc.channel.name}** rồi!\n"
@@ -295,23 +303,36 @@ async def slash_join(interaction: discord.Interaction):
     await interaction.response.defer()
 
     try:
-        if vc is not None and vc.is_connected():
-            # Cùng kênh, chỉ cần đảm bảo worker đang chạy
-            pass
-        else:
-            await voice_channel.connect(timeout=20.0, self_deaf=True)
+        # Nếu còn voice client cũ (dù không connected) → disconnect để xóa session Discord
+        if vc is not None:
+            try:
+                await vc.disconnect(force=True)
+            except Exception:
+                pass
+            # Gửi VOICE_STATE_UPDATE channel_id=null để Discord server xóa session cũ
+            await interaction.guild.change_voice_state(channel=None)
+            await asyncio.sleep(2.0)
+
+        log.info(f"[Join] Kết nối tới '{voice_channel.name}'...")
+        await voice_channel.connect(timeout=60.0, reconnect=False, self_deaf=True)
+        log.info(f"[Join] Kết nối thành công tới '{voice_channel.name}'.")
+
     except Exception as e:
         err_msg = str(e) if str(e) else type(e).__name__
         log.error(f"[Tham gia Voice] Lỗi: {err_msg}")
-        await interaction.followup.send(f"❌ Không thể kết nối tới kênh thoại. Lỗi: {err_msg}")
+        await interaction.followup.send(
+            f"❌ Không thể kết nối tới kênh thoại.\n"
+            f"Lỗi: `{err_msg}`\n"
+            f"💡 _Thử `/leave` rồi `/join` lại sau vài giây._"
+        )
         return
 
     if state.play_task is None or state.play_task.done():
-        state.play_task = bot.loop.create_task(
-            tts_worker(interaction.guild, state)
-        )
+        state.play_task = bot.loop.create_task(tts_worker(interaction.guild, state))
 
-    await interaction.followup.send(f"{auto_setup_msg}👋 Đã tham gia **{voice_channel.name}**. Hãy chat vào kênh đã setup để bot đọc!")
+    await interaction.followup.send(
+        f"{auto_setup_msg}👋 Đã tham gia **{voice_channel.name}**. Hãy chat vào kênh đã setup để bot đọc!"
+    )
 
 @tree.command(name="leave", description="Bot rời kênh thoại và xóa hàng đợi")
 async def slash_leave(interaction: discord.Interaction):
@@ -324,6 +345,11 @@ async def slash_leave(interaction: discord.Interaction):
             state.play_task = None
         state.queue = asyncio.Queue()
         await interaction.guild.voice_client.disconnect()
+        # Gửi VOICE_STATE_UPDATE channel_id=null để Discord xóa session ngay
+        try:
+            await interaction.guild.change_voice_state(channel=None)
+        except Exception:
+            pass
         await interaction.response.send_message("🛑 Đã rời kênh thoại và xóa hàng đợi.")
     else:
         await interaction.response.send_message("Bot đang không ở trong kênh thoại nào.", ephemeral=True)
